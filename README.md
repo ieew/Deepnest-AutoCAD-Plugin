@@ -35,6 +35,10 @@ addon.cc, main/, main.js, renderer.js, package.json, ...   ← 原始 Electron �
 
 ## 编译
 
+> **首次编译前**：确认 `src/DeepNest.Cad/DeepNest.Cad.csproj` 里的 `<AcadDir>` 指向你本机 AutoCAD 安装目录
+> （默认 `C:\Program Files\Autodesk\AutoCAD 2026`）。**路径末尾不要带反斜杠**——MSBuild 命令行里
+> `-p:AcadDir=...\2026\` 的尾反斜杠会转义引号，导致 AutoCAD 引用全部失效（报一堆 `CS0246`）。
+
 ```powershell
 $dn = "C:\Users\dongw\AppData\Local\Microsoft\dotnet\dotnet.exe"
 
@@ -44,12 +48,28 @@ $dn = "C:\Users\dongw\AppData\Local\Microsoft\dotnet\dotnet.exe"
 # AutoCAD 正在运行、DLL 被占用时（跳过项目引用复制，先单独编译 Core）
 & $dn build src/DeepNest.Core/DeepNest.Core.csproj -c Release
 & $dn build src/DeepNest.Cad/DeepNest.Cad.csproj -c Release -p:BuildProjectReferences=false
+
+# AutoCAD 装在别处
+& $dn build src/DeepNest.Cad/DeepNest.Cad.csproj -c Release "-p:AcadDir=D:\Autodesk\AutoCAD 2026"
 ```
 
-产物：
+### 一键出包（推荐）
+
+```powershell
+.\build-release.ps1                                     # Release 编译 + 单测 + bundle + zip
+.\build-release.ps1 -AcadDir "D:\Autodesk\AutoCAD 2026" # 指定 AutoCAD 目录
+.\build-release.ps1 -SkipTests -NoZip                   # 只编译并组装 bundle
+```
+
+输出：
 
 - `src/DeepNest.Cad/bin/Release/DeepNest.Cad.dll`（插件本体）
 - `src/DeepNest.Cad/bin/Release/DeepNest.Core.dll`（内核，需与插件同目录）
+- `dist/DeepNest.bundle/`（AutoCAD 标准分发包，`PackageContents.xml` 里的版本号自动取自程序集）
+- `dist/DeepNest-v<版本>.zip`（分发包压缩）
+
+> 脚本是 UTF-8 **带 BOM** 保存的——PowerShell 5.1 读取不带 BOM 的 `.ps1` 会按 ANSI 解码，中文会乱码并报语法错。编辑后请保留 BOM。
+
 
 ## 安装 / 使用
 

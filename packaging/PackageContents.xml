@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AutoCAD 插件包描述文件（模板）。__APPVERSION__ 由 build-release.ps1 自动替换为程序集版本。 -->
+<ApplicationPackage SchemaVersion="1.0"
+                    AppVersion="__APPVERSION__"
+                    ProductCode="{6F1B8C62-9A3E-4F4C-9F2A-2B3F0C5D7E22}"
+                    Name="DeepNest 排版插件"
+                    Description="DeepNest 排样（激光切割）：直接对图块做排版，不炸块、不改块名"
+                    Author="DeepNest for AutoCAD"
+                    Icon="./Contents/Windows/icon.ico">
+
+  <CompanyDetails Name="DeepNest" Url="https://deepnest.io" Email="" />
+
+  <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
+
+  <Components Description="DeepNest 排版">
+    <RuntimeRequirements OS="Win64" Platform="AutoCAD*" SeriesMin="R25.0" SeriesMax="R25.1" />
+    <ComponentEntry AppName="DeepNest"
+                    Version="__APPVERSION__"
+                    ModuleName="./Contents/Windows/DeepNest.Cad.dll"
+                    AppDescription="命令：DEEPNEST（排版面板）/ DEEPNESTCLEAN（清理上次结果）/ DEEPNESTINFO / DEEPNESTDUMP"
+                    LoadOnAutoCADStartup="True" />
+  </Components>
+
+</ApplicationPackage>

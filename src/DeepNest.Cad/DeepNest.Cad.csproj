@@ -19,8 +19,8 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-    <!-- AutoCAD 2026 安装目录 -->
-    <AcadDir>C:\Program Files\Autodesk\AutoCAD 2026\</AcadDir>
+    <!-- AutoCAD 2026 安装目录（不要带结尾反斜杠；用正斜杠拼接，避免 MSBuild 命令行尾斜杠转义问题） -->
+    <AcadDir>C:\Program Files\Autodesk\AutoCAD 2026</AcadDir>
   </PropertyGroup>
 
   <ItemGroup>
@@ -36,19 +36,19 @@
        AdWindows  = Ribbon 等 UI 框架 -->
   <ItemGroup>
     <Reference Include="acdbmgd">
-      <HintPath>$(AcadDir)acdbmgd.dll</HintPath>
+      <HintPath>$(AcadDir)/acdbmgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="accoremgd">
-      <HintPath>$(AcadDir)accoremgd.dll</HintPath>
+      <HintPath>$(AcadDir)/accoremgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="acmgd">
-      <HintPath>$(AcadDir)acmgd.dll</HintPath>
+      <HintPath>$(AcadDir)/acmgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="AdWindows">
-      <HintPath>$(AcadDir)AdWindows.dll</HintPath>
+      <HintPath>$(AcadDir)/AdWindows.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
