@@ -1,0 +1,27 @@
+# ---------- .NET 构建产物 ----------
+[Bb]in/
+[Oo]bj/
+*.user
+*.suo
+.vs/
+TestResults/
+dist/
+
+# ---------- 原 Electron 原型（node-gyp）构建产物 ----------
+node_modules/
+minkowski/
+*.node
+config.gypi
+gyp-mac-tool
+
+# ---------- 本机测试数据（图纸 / 导出） ----------
+*.dxf
+*.DXF
+*.dwg
+*.json.tmp
+deepnest-dump.json
+
+# ---------- 编辑器 / 系统 ----------
+.vscode/
+Thumbs.db
+desktop.ini

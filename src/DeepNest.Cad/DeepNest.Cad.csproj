@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>DeepNest.Cad</RootNamespace>
+    <AssemblyName>DeepNest.Cad</AssemblyName>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <!-- AutoCAD 2026 安装目录 -->
+    <AcadDir>C:\Program Files\Autodesk\AutoCAD 2026\</AcadDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeepNest.Core\DeepNest.Core.csproj" />
+    <PackageReference Include="Clipper2" Version="2.0.0" />
+  </ItemGroup>
+
+  <!-- AutoCAD 托管程序集：不复制到输出目录（由 CAD 自身提供）。
+       AutoCAD 2026 是 .NET 8；类型分布：
+       acdbmgd    = 数据库 / Runtime 基础
+       accoremgd  = 应用服务 / 命令特性
+       acmgd      = 界面 / PaletteSet
+       AdWindows  = Ribbon 等 UI 框架 -->
+  <ItemGroup>
+    <Reference Include="acdbmgd">
+      <HintPath>$(AcadDir)acdbmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="accoremgd">
+      <HintPath>$(AcadDir)accoremgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="acmgd">
+      <HintPath>$(AcadDir)acmgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AdWindows">
+      <HintPath>$(AcadDir)AdWindows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
