@@ -8,6 +8,11 @@
     <LangVersion>latest</LangVersion>
     <RootNamespace>DeepNest.Cad</RootNamespace>
     <AssemblyName>DeepNest.Cad</AssemblyName>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <Product>DeepNest for AutoCAD</Product>
+    <Description>DeepNest 排样插件（激光切割）：直接对图块做排版，不炸块、不改块名</Description>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>

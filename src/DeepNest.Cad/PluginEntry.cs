@@ -18,7 +18,9 @@ public sealed class PluginEntry : IExtensionApplication
         // 上次异常退出可能残留临时颜色，这里尝试恢复（不修改任何系统变量/配置）
         ColorMarker.TryRecoverPending();
 
-        WriteMessage($"DeepNest for AutoCAD {Version} 已加载。命令：DEEPNEST（面板）/ DEEPNESTINFO / DEEPNESTDUMP。");
+        WriteMessage(
+            $"DeepNest for AutoCAD {Version} 已加载。" +
+            "命令：DEEPNEST（面板）/ DEEPNESTCLEAN（清理上次结果）/ DEEPNESTINFO / DEEPNESTDUMP。");
     }
 
     public void Terminate()
