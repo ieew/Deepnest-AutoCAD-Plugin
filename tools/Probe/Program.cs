@@ -1,83 +1,105 @@
-﻿using DeepNest.Core.Geometry;
-using DeepNest.Core.Nesting;
+﻿using System.Text.Json;
+using DeepNest.Core.Geometry;
 
-static Poly Square(double x, double y, double w, double h)
+// 读取 tools/export_part_json.py 导出的零件几何，跑真实的 ContourBuilder，
+// 用于离线复现「外轮廓没被识别」这类块轮廓问题。
+var file = args.Length > 0
+    ? args[0]
+    : Path.Combine(Path.GetTempPath(), "deepnest-part.json");
+
+if (!File.Exists(file))
 {
-    return new Poly(new[]
-    {
-        new Point2D(x, y, true),
-        new Point2D(x + w, y, true),
-        new Point2D(x + w, y + h, true),
-        new Point2D(x, y + h, true)
-    });
+    Console.WriteLine($"找不到输入文件：{file}");
+    Console.WriteLine("先运行：python tools\\export_part_json.py 0.DXF");
+    return;
 }
 
-static void Dump(string title, List<Poly>? polys)
+using var doc = JsonDocument.Parse(File.ReadAllText(file));
+var root = doc.RootElement;
+
+double curveTolerance = root.GetProperty("curveTolerance").GetDouble();
+double joinTolerance = root.GetProperty("baseTolerance").GetDouble();
+Console.WriteLine($"块 [{root.GetProperty("block").GetString()}] 曲线容差={curveTolerance} 焊接容差={joinTolerance}");
+
+static Point2D Pt(JsonElement v) => new(v[0].GetDouble(), v[1].GetDouble(), true);
+
+var paths = new List<TessellatedPath>();
+foreach (var entity in root.GetProperty("entities").EnumerateArray())
 {
-    if (polys is null)
+    var type = entity.GetProperty("type").GetString();
+    if (type == "LINE")
     {
-        Console.WriteLine($"{title}: null");
-        return;
+        var path = new TessellatedPath { Closed = false };
+        path.Points.Add(Pt(entity.GetProperty("a")));
+        path.Points.Add(Pt(entity.GetProperty("b")));
+        paths.Add(path);
     }
-    Console.WriteLine($"{title}: count={polys.Count}");
-    foreach (var p in polys)
+    else if (type == "LWPOLYLINE")
     {
-        var b = p.Bounds;
-        Console.WriteLine($"   pts={p.Points.Count} bounds=[{b.MinX:0.###},{b.MinY:0.###} - {b.MaxX:0.###},{b.MaxY:0.###}]");
+        bool closed = entity.GetProperty("closed").GetBoolean();
+        var verts = new List<(Point2D Point, double Bulge)>();
+        foreach (var v in entity.GetProperty("verts").EnumerateArray())
+        {
+            double bulge = v.GetArrayLength() > 2 ? v[2].GetDouble() : 0.0;
+            verts.Add((Pt(v), bulge));
+        }
+
+        if (verts.Count < 2)
+        {
+            continue;
+        }
+
+        var path = new TessellatedPath { Closed = closed };
+        path.Points.Add(verts[0].Point);
+        int segments = closed ? verts.Count : verts.Count - 1;
+        for (int i = 0; i < segments; i++)
+        {
+            var p1 = verts[i].Point;
+            var p2 = verts[(i + 1) % verts.Count].Point;
+            ArcTessellation.AppendArcSegment(path.Points, p1, p2, verts[i].Bulge, curveTolerance);
+        }
+
+        if (closed && path.Points.Count > 1)
+        {
+            var first = path.Points[0];
+            var last = path.Points[^1];
+            if (Math.Abs(first.X - last.X) < 1e-9 && Math.Abs(first.Y - last.Y) < 1e-9)
+            {
+                path.Points.RemoveAt(path.Points.Count - 1);
+            }
+        }
+
+        paths.Add(path);
     }
 }
 
-var engine = new ClipperNfpEngine();
-
-// 1) 旋转 180° 的零件：允许区域应上移到 [10,100]
-var sheet = Square(0, 0, 100, 100);
-sheet.SourceId = 1;
-var part = Square(0, 0, 10, 10);
-part.SourceId = 2;
-var rotated = GeometryUtil.Rotate(part, 180);
-Console.WriteLine($"rotated part bounds = {rotated.Bounds}");
-Dump("InnerNfp(sheet, part@180)", engine.InnerNfp(sheet, rotated));
-
-// 2) 旋转 90° 的零件
-var rotated90 = GeometryUtil.Rotate(part, 90);
-Console.WriteLine($"rotated90 part bounds = {rotated90.Bounds}");
-Dump("InnerNfp(sheet, part@90)", engine.InnerNfp(sheet, rotated90));
-
-// 3) 完整摆放：4 件 45x45，全部旋转 90
-var config = new NestConfig { Rotations = 4, AllowMirror = false, MaxSheets = 5 };
-var sheet2 = Square(0, 0, 100, 100);
-sheet2.SourceId = 900;
-var template = new SheetTemplate { Shape = sheet2, SourceId = 900 };
-
-var parts = new List<PartInstance>();
-for (int i = 0; i < 4; i++)
+Console.WriteLine($"离散后 {paths.Count} 条路径：");
+for (int i = 0; i < paths.Count; i++)
 {
-    var s = Square(0, 0, 45, 45);
-    s.SourceId = 100;
-    parts.Add(new PartInstance { Id = i, SourceId = 100, Shape = s });
+    var path = paths[i];
+    var bounds = GeometryUtil.GetBounds(path.Points);
+    Console.WriteLine(
+        $"  #{i,-2} closed={(path.Closed ? 1 : 0)} n={path.Points.Count,-4} " +
+        $"bbox=[{bounds.MinX:0.##},{bounds.MinY:0.##} - {bounds.MaxX:0.##},{bounds.MaxY:0.##}]");
 }
 
-var placement = new PlacementEngine(engine, config);
-var genes = parts.Select(p => new Gene(p.Id, 1, false)).ToArray(); // 旋转索引 1 = 90°
-var result = placement.Place(template, parts, genes, CancellationToken.None);
-Console.WriteLine($"\nplace: placed={result.PlacedCount} sheets={result.SheetCount} forced={result.ForcedCount}");
-foreach (var sp in result.Sheets)
+var built = ContourBuilder.Build(paths, joinTolerance, curveTolerance);
+
+Console.WriteLine();
+Console.WriteLine($"结果: kind={built.Kind} 环数={built.LoopCount} 开口端={built.OpenEndCount} " +
+                  $"采用容差={built.RepairTolerance:0.###} 剔除路径={built.DroppedPathCount}");
+Console.WriteLine($"保留几何 bbox=[{built.KeptBounds.MinX:0.##},{built.KeptBounds.MinY:0.##} - " +
+                  $"{built.KeptBounds.MaxX:0.##},{built.KeptBounds.MaxY:0.##}]");
+foreach (var warning in built.Warnings)
 {
-    foreach (var p in sp.Placements)
-    {
-        var shape = Square(0, 0, 45, 45).Points;
-        var rotatedShape = GeometryUtil.RotatePoints(shape, p.Rotation);
-        var b = GeometryUtil.GetBounds(rotatedShape.Select(pt => new Point2D(pt.X + p.X, pt.Y + p.Y)));
-        Console.WriteLine($"  sheet{sp.SheetIndex} id{p.InstanceId} t=({p.X:0.##},{p.Y:0.##}) rot={p.Rotation} 落点bbox=[{b.MinX:0.##},{b.MinY:0.##} - {b.MaxX:0.##},{b.MaxY:0.##}]");
-    }
+    Console.WriteLine("  警告: " + warning);
 }
 
-// 4) 零件远离原点 + 旋转
-var far = Square(500, 500, 45, 45);
-far.SourceId = 101;
-var farParts = new List<PartInstance> { new() { Id = 0, SourceId = 101, Shape = far } };
-var r2 = placement.Place(template, farParts, new[] { new Gene(0, 2, false) }, CancellationToken.None);
-var p2 = r2.Sheets[0].Placements[0];
-var shape2 = GeometryUtil.RotatePoints(far.Points, p2.Rotation);
-var b2 = GeometryUtil.GetBounds(shape2.Select(pt => new Point2D(pt.X + p2.X, pt.Y + p2.Y)));
-Console.WriteLine($"\nfar part: t=({p2.X:0.##},{p2.Y:0.##}) rot={p2.Rotation} 落点bbox=[{b2.MinX:0.##},{b2.MinY:0.##} - {b2.MaxX:0.##},{b2.MaxY:0.##}]");
+Console.WriteLine($"根轮廓 {built.Roots.Count} 个：");
+foreach (var poly in built.Roots)
+{
+    var bounds = poly.Bounds;
+    Console.WriteLine(
+        $"  area={Math.Abs(GeometryUtil.SignedArea(poly.Points)):0.##} n={poly.Points.Count} " +
+        $"bbox=[{bounds.MinX:0.##},{bounds.MinY:0.##} - {bounds.MaxX:0.##},{bounds.MaxY:0.##}] 孔={poly.Children.Count}");
+}

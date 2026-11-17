@@ -1,6 +1,12 @@
-using DeepNest.Core.Geometry;
+namespace DeepNest.Core.Geometry;
 
-namespace DeepNest.Cad.Cad;
+/// <summary>一条离散后的路径（已变换到 WCS）。</summary>
+public sealed class TessellatedPath
+{
+    public List<Point2D> Points { get; } = new();
+
+    public bool Closed { get; init; }
+}
 
 public enum ContourKind
 {
@@ -181,9 +187,14 @@ public static class ContourBuilder
             .OrderByDescending(p => Math.Abs(GeometryUtil.SignedArea(p.Points)))
             .First();
 
-        // 可信度校验：外轮廓必须覆盖块内几何的大部分范围，
-        // 否则说明真正的轮廓没合上（只剩小缺口/小孔成环）。
-        if (!IsTrustworthy(root, geometryBounds, out string? reason))
+        // 可信度校验：外轮廓必须真正包住块内的几何，否则说明真正的轮廓没合上
+        // （只剩内框/小缺口成环）。
+        var geometryPaths = new List<List<Point2D>>(closedLoops.Count + openChains.Count);
+        geometryPaths.AddRange(closedLoops);
+        geometryPaths.AddRange(openChains);
+
+        double margin = Math.Max(0.5, best.Tolerance * 0.5);
+        if (!IsTrustworthy(root, geometryPaths, geometryBounds, margin, out string? reason))
         {
             result.Roots.Clear();
             result.Kind = ContourKind.Unusable;
@@ -341,7 +352,12 @@ public static class ContourBuilder
         return Math.Sqrt(dx * dx + dy * dy);
     }
 
-    private static bool IsTrustworthy(Poly root, in Bounds2D geometryBounds, out string? reason)
+    private static bool IsTrustworthy(
+        Poly root,
+        List<List<Point2D>> geometryPaths,
+        in Bounds2D geometryBounds,
+        double margin,
+        out string? reason)
     {
         reason = null;
         if (geometryBounds.Width <= Eps && geometryBounds.Height <= Eps)
@@ -366,7 +382,68 @@ public static class ContourBuilder
             return false;
         }
 
+        // 硬条件：几何点必须落在轮廓内（或就在轮廓线上）。
+        // 内框被当成零件时，外框那些残段的点就在它外面，这一步会把它拓下来。
+        int total = 0;
+        int outside = 0;
+        foreach (var path in geometryPaths)
+        {
+            foreach (var point in path)
+            {
+                total++;
+                if (GeometryUtil.PointInPolygon(point, root.Points) >= 0)
+                {
+                    continue;
+                }
+
+                if (DistanceToRing(point, root.Points) <= margin)
+                {
+                    continue;
+                }
+
+                outside++;
+            }
+        }
+
+        if (outside > 2 && outside * 50 > total)
+        {
+            reason =
+                $"有 {outside}/{total} 个几何点落在识别出的轮廓之外（轮廓没合上），已改用外包矩形。";
+            return false;
+        }
+
         return true;
+    }
+
+    /// <summary>点到多边形边界的最短距离。</summary>
+    private static double DistanceToRing(Point2D point, IReadOnlyList<Point2D> ring)
+    {
+        double best = double.MaxValue;
+        for (int i = 0; i < ring.Count; i++)
+        {
+            var a = ring[i];
+            var b = ring[(i + 1) % ring.Count];
+            best = Math.Min(best, DistanceToSegment(point, a, b));
+        }
+
+        return best;
+    }
+
+    private static double DistanceToSegment(Point2D p, Point2D a, Point2D b)
+    {
+        double dx = b.X - a.X;
+        double dy = b.Y - a.Y;
+        double lengthSquared = dx * dx + dy * dy;
+        if (lengthSquared <= 1e-18)
+        {
+            return Math.Sqrt((p.X - a.X) * (p.X - a.X) + (p.Y - a.Y) * (p.Y - a.Y));
+        }
+
+        double t = ((p.X - a.X) * dx + (p.Y - a.Y) * dy) / lengthSquared;
+        t = Math.Clamp(t, 0.0, 1.0);
+        double projX = a.X + t * dx;
+        double projY = a.Y + t * dy;
+        return Math.Sqrt((p.X - projX) * (p.X - projX) + (p.Y - projY) * (p.Y - projY));
     }
 
     private static List<double> BuildToleranceLadder(double baseTolerance, double diagonal)
@@ -544,6 +621,7 @@ public static class ContourBuilder
         }
 
         var used = new bool[edges.Count];
+        int deadEnds = 0;
 
         for (int start = 0; start < edges.Count; start++)
         {
@@ -609,9 +687,16 @@ public static class ContourBuilder
             {
                 closedLoops.Add(Cleanup(walk));
             }
+            else
+            {
+                // 这条链没能绕回起点：说明还有缺口没接上。
+                // 注意不能靠“还没用过的边”统计：走过但没闭合的边也被标记 used 了，
+                // 那样开口端会恒为 0，容差梯子就永远不会升级。
+                deadEnds++;
+            }
         }
 
-        // 统计仍然没有接上的开口端
+        // 没接上的端点数 = 死端链 ×2 + 仍未使用边的端点
         var openNodes = new HashSet<int>();
         for (int i = 0; i < edges.Count; i++)
         {
@@ -623,7 +708,7 @@ public static class ContourBuilder
             openNodes.Add(edges[i].B);
         }
 
-        return openNodes.Count;
+        return deadEnds * 2 + openNodes.Count;
     }
 
     private static void Add(Dictionary<int, List<int>> map, int key, int value)

@@ -476,3 +476,98 @@ public class PlacementTests
         Assert.Equal(4.5, engine.Spacing, 6);
     }
 }
+
+public class ContourBuilderTests
+{
+    private static TessellatedPath Open(params (double X, double Y)[] points)
+    {
+        var path = new TessellatedPath { Closed = false };
+        foreach (var (x, y) in points)
+        {
+            path.Points.Add(new Point2D(x, y, true));
+        }
+        return path;
+    }
+
+    private static TessellatedPath Closed(params (double X, double Y)[] points)
+    {
+        var path = new TessellatedPath { Closed = true };
+        foreach (var (x, y) in points)
+        {
+            path.Points.Add(new Point2D(x, y, true));
+        }
+        return path;
+    }
+
+    /// <summary>
+    /// 回归：外框是"首尾差一段"的开放轮廓时，必须逐级放大焊接容差把它接上，
+    /// 而不是把内框当成零件轮廓（真实图纸 0.DXF 的 Ⱥ345 就是这个情形）。
+    /// </summary>
+    [Fact]
+    public void GappedOuterFrame_IsRepaired_AndInnerLoopBecomesHole()
+    {
+        var paths = new List<TessellatedPath>
+        {
+            // 外框：100x100，最后一段差 3 个单位没接上
+            Open((0, 0), (100, 0), (100, 100), (0, 100), (0, 3)),
+            // 内框：闭合的 60x60
+            Closed((20, 20), (80, 20), (80, 80), (20, 80))
+        };
+
+        var built = ContourBuilder.Build(paths, joinTolerance: 0.1, curveTolerance: 0.1);
+
+        Assert.Equal(ContourKind.OpenChord, built.Kind);
+        Assert.True(built.RepairTolerance >= 3 - 1e-9,
+            $"应当放大容差接合缺口，实际采用 {built.RepairTolerance}");
+        Assert.Single(built.Roots);
+
+        var root = built.Roots[0];
+        var bounds = root.Bounds;
+        Assert.Equal(0, bounds.MinX, 6);
+        Assert.Equal(0, bounds.MinY, 6);
+        Assert.Equal(100, bounds.MaxX, 6);
+        Assert.Equal(100, bounds.MaxY, 6);
+        Assert.Single(root.Children);
+
+        var hole = root.Children[0];
+        Assert.Equal(3600, Math.Abs(GeometryUtil.SignedArea(hole.Points)), 6);
+    }
+
+    /// <summary>没有缺口时不应该误判为需要修补。</summary>
+    [Fact]
+    public void ClosedOuterFrame_NeedsNoRepair()
+    {
+        var paths = new List<TessellatedPath>
+        {
+            Closed((0, 0), (100, 0), (100, 100), (0, 100))
+        };
+
+        var built = ContourBuilder.Build(paths, joinTolerance: 0.1, curveTolerance: 0.1);
+
+        Assert.Equal(ContourKind.Closed, built.Kind);
+        Assert.Equal(0, built.OpenEndCount);
+        Assert.Equal(0.1, built.RepairTolerance, 9);
+        Assert.Single(built.Roots);
+        Assert.Equal(10000, Math.Abs(GeometryUtil.SignedArea(built.Roots[0].Points)), 6);
+    }
+
+    /// <summary>外框缺口大到接不上时，不能把内框当零件（应退回外包矩形）。</summary>
+    [Fact]
+    public void UnrepairableOuterFrame_FallsBackInsteadOfUsingInnerLoop()
+    {
+        var paths = new List<TessellatedPath>
+        {
+            // 外框：只画了三面，缺一整条边（缺口 100，远大于容差上限 5% 对角≈7）
+            Open((0, 0), (100, 0), (100, 100), (0, 100)),
+            // 内框：闭合的 60x60
+            Closed((20, 20), (80, 20), (80, 80), (20, 80))
+        };
+
+        var built = ContourBuilder.Build(paths, joinTolerance: 0.1, curveTolerance: 0.1);
+
+        Assert.Equal(ContourKind.Unusable, built.Kind);
+        Assert.Empty(built.Roots);
+        Assert.Equal(100, built.KeptBounds.Width, 6);
+        Assert.Equal(100, built.KeptBounds.Height, 6);
+    }
+}

@@ -1,5 +1,6 @@
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
+using DeepNest.Core.Geometry;
 
 namespace DeepNest.Cad.Cad;
 

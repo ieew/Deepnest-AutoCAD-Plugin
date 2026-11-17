@@ -36,12 +36,32 @@ def split_entities(records):
         if code == 0:
             if ent is not None:
                 out.append(ent)
-            ent = {"type": val, "g": collections.defaultdict(list)}
+            ent = {"type": val, "g": collections.defaultdict(list), "raw": []}
         elif ent is not None:
             ent["g"][code].append(val)
+            ent["raw"].append((code, val))
     if ent is not None:
         out.append(ent)
     return out
+
+
+def lwpoly_vertices(ent):
+    """按 DXF 原始顺序解析 LWPOLYLINE 顶点 -> [[x, y, bulge], ...]。
+
+    bulge(42) 紧跟在所属顶点之后，且 bulge=0 时会被省略，
+    所以不能用「按序号平铺」的方式配对。
+    """
+    verts = []
+    cur = None
+    for code, val in ent.get("raw", []):
+        if code == 10:
+            cur = [float(val), 0.0, 0.0]
+            verts.append(cur)
+        elif code == 20 and cur is not None:
+            cur[1] = float(val)
+        elif code == 42 and cur is not None:
+            cur[2] = float(val)
+    return verts
 
 
 def g(ent, code, idx=0, default=0.0):
@@ -167,15 +187,9 @@ def tess_ellipse(e, tf):
 
 
 def tess_lwpoly(e, tf):
-    xs = [float(v) for v in e["g"].get(10, [])]
-    ys = [float(v) for v in e["g"].get(20, [])]
-    bs = [float(v) for v in e["g"].get(42, [])]
+    verts = lwpoly_vertices(e)
     closed = bool(int(g(e, 70)) & 1)
-    pts = []
-    n = min(len(xs), len(ys))
-    for k in range(n):
-        bulge = bs[k] if k < len(bs) else 0.0
-        pts.append((xs[k], ys[k], bulge))
+    pts = [(v[0], v[1], v[2]) for v in verts]
     if closed and pts:
         pts.append(pts[0])
     out = []
